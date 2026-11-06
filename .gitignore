@@ -1,0 +1,23 @@
+# ===== 本地私有数据：绝不上库 =====
+# SQLite 索引与变更日志（含记忆 id / 元数据）
+index/
+# 真实长期记忆内容（私有）
+memories/
+# 项目隔离区（敏感记忆）
+private/
+# 你的真实本地项目路径映射
+maps/projects.json
+# 依赖与锁文件
+mcp-memory/node_modules/
+mcp-memory/package-lock.json
+# 运行残留
+*.log
+*.pid
+*.db
+*.db-shm
+*.db-wal
+
+# ===== 但保留示例、占位与代码 =====
+!maps/projects.example.json
+!maps/.gitkeep
+!memories/.gitkeep

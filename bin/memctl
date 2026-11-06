@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# memctl — 共享记忆系统管理脚本（WSL 侧，四端共用）
+# 用法: memctl {start|stop|status|reindex|doctor|rollback <备份目录>|test}
+set -euo pipefail
+SM="${SHARED_MEMORY_ROOT:-$HOME/shared-memory}"
+SRV="$SM/mcp-memory/server.js"
+NODE="/usr/bin/node"
+LOG="$SM/index/service.log"
+PIDFILE="$SM/index/service.pid"
+
+cmd="${1:-status}"
+
+ok()   { echo "[OK]  $*"; }
+warn() { echo "[!!]  $*"; }
+
+case "$cmd" in
+  start)
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+      ok "已在运行 (pid $(cat "$PIDFILE"))"; exit 0
+    fi
+    # 该服务为 stdio MCP：平时由各客户端按需拉起。这里"启动"= 预热索引并做一次自检。
+    nohup "$NODE" "$SRV" --reindex >>"$LOG" 2>&1 &
+    echo $! > "$PIDFILE"
+    sleep 1
+    rm -f "$PIDFILE"
+    ok "索引预热完成 (见 $LOG)"
+    ;;
+  stop)
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+      kill "$(cat "$PIDFILE")" 2>/dev/null || true
+      rm -f "$PIDFILE"
+      ok "已停止"
+    else
+      ok "无常驻进程（本服务为 stdio，按需拉起，无需常驻）"
+    fi
+    ;;
+  status)
+    echo "== 共享记忆状态 =="
+    echo "主副本: $SM"
+    echo "数据库: $SM/index/memory.db"
+    "$NODE" "$SRV" --reindex >/dev/null 2>&1 || warn "reindex 失败"
+    ( cd "$SM/mcp-memory" && "$NODE" status.mjs )
+    ;;
+  reindex)
+    "$NODE" "$SRV" --reindex
+    ;;
+  doctor)
+    echo "== 自检 =="
+    [ -f "$SRV" ] && ok "服务脚本存在" || warn "缺 $SRV"
+    [ -d "$SM/memories" ] && ok "公共记忆目录存在" || warn "缺 memories/"
+    [ -f "$SM/maps/projects.json" ] && ok "项目映射存在" || warn "缺 maps/projects.json"
+    echo "--- 客户端配置（WSL 侧） ---"
+    for f in "$HOME/.omp/agent/mcp.json" "$HOME/.config/opencode/opencode.json"; do
+      if grep -q shared-memory "$f" 2>/dev/null; then ok "已配置: $f"; else warn "未配置 shared-memory: $f"; fi
+    done
+    echo "--- 客户端配置（Windows 侧，经 /mnt/c） ---"
+    WINUSER="${WIN_USER:-}"
+    if [ -z "$WINUSER" ]; then
+      for d in /mnt/c/Users/*/; do
+        n="$(basename "$d")"
+        case "$n" in Public|Default|"Default User"|"All Users"|.*) continue;; esac
+        [ -d "/mnt/c/Users/$n/.claude" ] && { WINUSER="$n"; break; }
+      done
+      WINUSER="${WINUSER:-user}"
+    fi
+    for f in "/mnt/c/Users/$WINUSER/.config/opencode/opencode.json" "/mnt/c/Users/$WINUSER/.claude.json"; do
+      if grep -q shared-memory "$f" 2>/dev/null; then ok "已配置: $f"; else warn "未配置 shared-memory: $f"; fi
+    done
+    grep -q shared-memory "/mnt/c/Users/$WINUSER/.claude/CLAUDE.md" 2>/dev/null && ok "CLAUDE.md 含记忆说明" || warn "CLAUDE.md 未含记忆说明"
+    ;;
+  rollback)
+    bak="${2:?用法: memctl rollback <备份目录>}"
+    echo "从 $bak 回滚配置..."
+    [ -f "$bak/wsl-opencode.json" ] && cp "$bak/wsl-opencode.json" "$HOME/.config/opencode/opencode.json" && ok "回滚 wsl opencode.json"
+    [ -f "$bak/omp-mcp.json" ] && cp "$bak/omp-mcp.json" "$HOME/.omp/agent/mcp.json" && ok "回滚 omp mcp.json"
+    [ -f "$bak/omp-AGENTS.md" ] && cp "$bak/omp-AGENTS.md" "$HOME/.omp/agent/AGENTS.md" && ok "回滚 omp AGENTS.md"
+    echo "WSL 侧回滚完成。Windows 侧请用各自备份目录下的 win-*.json / win-CLAUDE.md 手动覆盖。"
+    ;;
+  test)
+    ( cd "$SM/mcp-memory" && "$NODE" smoke.mjs )
+    ;;
+  *)
+    echo "用法: memctl {start|stop|status|reindex|doctor|rollback <dir>|test}"; exit 1;;
+esac

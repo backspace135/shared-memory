@@ -1,0 +1,12 @@
+[
+  {
+    "id": "proj:example-app",
+    "name": "example-app",
+    "paths": ["D:/project/example-app", "/mnt/d/project/example-app"]
+  },
+  {
+    "id": "proj:example-desktop",
+    "name": "example-desktop",
+    "paths": ["C:/Users/<user>/Desktop/example-desktop", "/mnt/c/Users/<user>/Desktop/example-desktop"]
+  }
+]
